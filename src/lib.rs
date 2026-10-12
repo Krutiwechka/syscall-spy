@@ -13,3 +13,9 @@ pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> 
     let write_fn: unsafe extern "C" fn(c_int, *const c_void, size_t) -> ssize_t = unsafe {std::mem::transmute(addr)};
     unsafe { write_fn(fd, buf, count)}
 }
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssize_t{
+    let addr = unsafe {libc::dlsym(RTLD_NEXT, c"read".as_ptr())};
+    let read_fn: unsafe extern "C" fn(c_int, *mut c_void, size_t) -> ssize_t = unsafe {std::mem::transmute(addr)};
+    unsafe { read_fn(fd, buf, count)}
+}
