@@ -1,5 +1,5 @@
 #![allow(clippy::missing_safety_doc)]
-use libc::{RTLD_NEXT, size_t, ssize_t};
+use libc::{RTLD_NEXT, mode_t, size_t, ssize_t};
 use std::ffi::{c_char, c_int, c_void};
 
 #[unsafe(no_mangle)]
@@ -22,6 +22,7 @@ pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssi
     let read_fn: unsafe extern "C" fn(c_int, *mut c_void, size_t) -> ssize_t = unsafe {std::mem::transmute(addr)};
     unsafe { read_fn(fd, buf, count)}
 }
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mode: c_int) -> c_int{
     let addr = unsafe {libc::dlsym(RTLD_NEXT, c"open".as_ptr()) };
@@ -29,10 +30,11 @@ pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mode: c_int
     let r_mode = if (libc::O_CREAT | libc::O_TMPFILE) & flags == 0 {mode} else {0};
     unsafe {open_fn(pathname, flags, r_mode)}
 }
+
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opentat(dirfd: c_int, pathname: *const c_char, flags: c_int, mode: c_int) -> c_int{
+pub unsafe extern "C" fn openat(dirfd: c_int, pathname: *const c_char, flags: c_int, mode: mode_t) -> c_int{
     let addr = unsafe {libc::dlsym(RTLD_NEXT, c"openat".as_ptr()) };
-    let openat_fn: unsafe extern "C" fn(c_int, *const c_char, c_int, c_int) -> c_int = unsafe {std::mem::transmute(addr)};
+    let openat_fn: unsafe extern "C" fn(c_int, *const c_char, c_int, mode_t) -> c_int = unsafe {std::mem::transmute(addr)};
     let r_mode = if (libc::O_CREAT | libc::O_TMPFILE) & flags == 0 {mode} else {0};
     unsafe {openat_fn(dirfd, pathname, flags, r_mode)}
 } 
