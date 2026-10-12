@@ -1,9 +1,15 @@
-use libc::{c_int, c_char, RTLD_NEXT};
-
+#![allow(clippy::missing_safety_doc)]
+use libc::{RTLD_NEXT, size_t, ssize_t};
+use std::ffi::{c_int, c_void};
 #[unsafe(no_mangle)]
-unsafe extern "C" fn close(fd: c_int) -> c_int {
-    let ptr = unsafe { libc::dlsym(RTLD_NEXT, c"close".as_ptr() as *const c_char) };
-    let close_ptr: *const unsafe extern "C" fn(c_int) -> c_int = ptr.cast();
-    let close_fn: unsafe extern "C" fn(c_int) -> c_int = unsafe { close_ptr.read() };
+pub unsafe extern "C" fn close(fd: c_int) -> c_int {
+    let addr = unsafe { libc::dlsym(RTLD_NEXT, c"close".as_ptr()) };
+    let close_fn: unsafe extern "C" fn(c_int) -> c_int = unsafe {std::mem::transmute(addr)};
     unsafe { close_fn(fd) }
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> ssize_t{
+    let addr = unsafe {libc::dlsym(RTLD_NEXT, c"write".as_ptr()) };
+    let write_fn: unsafe extern "C" fn(c_int, *const c_void, size_t) -> ssize_t = unsafe {std::mem::transmute(addr)};
+    unsafe { write_fn(fd, buf, count)}
 }
