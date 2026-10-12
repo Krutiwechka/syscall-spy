@@ -1,0 +1,14 @@
+[package]
+name = "syscall_spy"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libc = "0.2.190"
+
+[lib]
+name = "syscall_spy"
+crate-type = ["cdylib"]
+
+[profile.release]
+panic = "abort"
