@@ -33,27 +33,30 @@ fn needs_mode(flags: c_int) -> bool{
 pub unsafe extern "C" fn close(fd: c_int) -> c_int {
     let addr = unsafe {func_addr(&CLOSE_ADDR, c"close")};
     let close_fn: unsafe extern "C" fn(c_int) -> c_int = unsafe {std::mem::transmute(addr)};
+    let ret = unsafe { close_fn(fd) };
     let errno_saved = unsafe { *errno() };
     unsafe { *errno() = errno_saved };
-    unsafe { close_fn(fd) }
+    ret    
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> ssize_t{
     let addr = unsafe { func_addr(&WRITE_ADDR, c"write")};
     let write_fn: unsafe extern "C" fn(c_int, *const c_void, size_t) -> ssize_t = unsafe {std::mem::transmute(addr)};
+    let ret = unsafe { write_fn(fd, buf, count)};
     let errno_saved = unsafe { *errno() };
     unsafe { *errno() = errno_saved };
-    unsafe { write_fn(fd, buf, count)}
+    ret
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssize_t{
     let addr = unsafe {func_addr(&READ_ADDR, c"read")};
     let read_fn: unsafe extern "C" fn(c_int, *mut c_void, size_t) -> ssize_t = unsafe {std::mem::transmute(addr)};
+    let ret = unsafe { read_fn(fd, buf, count)};
     let errno_saved = unsafe { *errno() };  
     unsafe { *errno() = errno_saved };
-    unsafe { read_fn(fd, buf, count)}
+    ret
 }
 
 #[unsafe(no_mangle)]
@@ -61,9 +64,10 @@ pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mode: mode_
     let addr = unsafe { func_addr(&OPEN_ADDR, c"open")};
     let open_fn: unsafe extern "C" fn(*const c_char, c_int, mode_t) -> c_int = unsafe {std::mem::transmute(addr)};
     let r_mode = if needs_mode(flags) {mode} else {0};
+    let ret = unsafe {open_fn(pathname, flags, r_mode)};
     let errno_saved = unsafe { *errno() };  
     unsafe { *errno() = errno_saved };
-    unsafe {open_fn(pathname, flags, r_mode)}
+    ret
 }
 
 #[unsafe(no_mangle)]
@@ -71,8 +75,9 @@ pub unsafe extern "C" fn openat(dirfd: c_int, pathname: *const c_char, flags: c_
     let addr = unsafe { func_addr(&OPENAT_ADDR, c"openat")};
     let openat_fn: unsafe extern "C" fn(c_int, *const c_char, c_int, mode_t) -> c_int = unsafe {std::mem::transmute(addr)}; 
     let r_mode = if needs_mode(flags) {mode} else {0};
+    let ret = unsafe {openat_fn(dirfd, pathname, flags, r_mode)};
     let errno_saved = unsafe { *errno() };  
     unsafe { *errno() = errno_saved };
-    unsafe {openat_fn(dirfd, pathname, flags, r_mode)}
+    ret    
 } 
 
