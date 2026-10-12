@@ -29,3 +29,11 @@ pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mode: c_int
     let r_mode = if (libc::O_CREAT | libc::O_TMPFILE) & flags == 0 {mode} else {0};
     unsafe {open_fn(pathname, flags, r_mode)}
 }
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn opentat(dirfd: c_int, pathname: *const c_char, flags: c_int, mode: c_int) -> c_int{
+    let addr = unsafe {libc::dlsym(RTLD_NEXT, c"openat".as_ptr()) };
+    let openat_fn: unsafe extern "C" fn(c_int, *const c_char, c_int, c_int) -> c_int = unsafe {std::mem::transmute(addr)};
+    let r_mode = if (libc::O_CREAT | libc::O_TMPFILE) & flags == 0 {mode} else {0};
+    unsafe {openat_fn(dirfd, pathname, flags, r_mode)}
+} 
+
