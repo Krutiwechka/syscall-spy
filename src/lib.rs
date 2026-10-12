@@ -57,9 +57,9 @@ pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssi
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mode: c_int) -> c_int{
+pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mode: mode_t) -> c_int{
     let addr = unsafe { func_addr(&OPEN_ADDR, c"open")};
-    let open_fn: unsafe extern "C" fn(*const c_char, c_int, c_int) -> c_int = unsafe {std::mem::transmute(addr)};
+    let open_fn: unsafe extern "C" fn(*const c_char, c_int, mode_t) -> c_int = unsafe {std::mem::transmute(addr)};
     let r_mode = if needs_mode(flags) {mode} else {0};
     let errno_saved = unsafe { *errno() };  
     unsafe { *errno() = errno_saved };
