@@ -2,7 +2,7 @@
 use libc::{ RTLD_NEXT, mode_t, size_t, ssize_t};
 use std::ffi::{self, c_char, c_int, c_void};
 use std::sync::atomic::{Ordering, AtomicPtr};
-
+use std::io::Write as _;
 //convenient errno func
 unsafe fn errno() -> *mut c_int{unsafe {libc::__errno_location()}}
 
@@ -27,7 +27,15 @@ unsafe fn func_addr(cached_addr: &AtomicPtr<c_void>, func_name: &ffi::CStr) -> *
 fn needs_mode(flags: c_int) -> bool{
     flags & libc::O_CREAT != 0 || flags & libc::O_TMPFILE == libc::O_TMPFILE
 }
-
+//logging func 
+fn log(args: std::fmt::Arguments) {
+    let mut buf = [0u8; 512];
+    let mut rest:&mut[u8] = &mut buf;
+    let _ = rest.write_fmt(args);
+    let write_fn: unsafe extern "C" fn(c_int, *const c_void, size_t) -> ssize_t = unsafe {std::mem::transmute(func_addr(&WRITE_ADDR, c"write"))};
+    let count: size_t = 512 - rest.len();
+    unsafe {write_fn(2, buf.as_ptr() as *const c_void, count)}; 
+}
 //methods intercepting libc calls
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn close(fd: c_int) -> c_int {
@@ -35,6 +43,7 @@ pub unsafe extern "C" fn close(fd: c_int) -> c_int {
     let close_fn: unsafe extern "C" fn(c_int) -> c_int = unsafe {std::mem::transmute(addr)};
     let ret = unsafe { close_fn(fd) };
     let errno_saved = unsafe { *errno() };
+    log(format_args!("close(fd = {}) = {}\n", fd, errno_saved));
     unsafe { *errno() = errno_saved };
     ret    
 }
@@ -45,6 +54,7 @@ pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> 
     let write_fn: unsafe extern "C" fn(c_int, *const c_void, size_t) -> ssize_t = unsafe {std::mem::transmute(addr)};
     let ret = unsafe { write_fn(fd, buf, count)};
     let errno_saved = unsafe { *errno() };
+    log(format_args!("write(fd = {}, buf = {:p}, count = {}) = {}\n", fd, buf, count, errno_saved));
     unsafe { *errno() = errno_saved };
     ret
 }
@@ -54,7 +64,8 @@ pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssi
     let addr = unsafe {func_addr(&READ_ADDR, c"read")};
     let read_fn: unsafe extern "C" fn(c_int, *mut c_void, size_t) -> ssize_t = unsafe {std::mem::transmute(addr)};
     let ret = unsafe { read_fn(fd, buf, count)};
-    let errno_saved = unsafe { *errno() };  
+    let errno_saved = unsafe { *errno() };
+    log(format_args!("read(fd = {}, buf = {:p}, count = {}) = {}\n", fd, buf, count, errno_saved));
     unsafe { *errno() = errno_saved };
     ret
 }
@@ -66,6 +77,7 @@ pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mode: mode_
     let r_mode = if needs_mode(flags) {mode} else {0};
     let ret = unsafe {open_fn(pathname, flags, r_mode)};
     let errno_saved = unsafe { *errno() };  
+    unsafe { log(format_args!("open(pathname = {}, flags = {}, mode = {}) = {}\n", std::ffi::CStr::from_ptr(pathname).to_str().unwrap_or("[INCORRECT UTF-8]"), flags, r_mode, errno_saved));}
     unsafe { *errno() = errno_saved };
     ret
 }
@@ -76,7 +88,12 @@ pub unsafe extern "C" fn openat(dirfd: c_int, pathname: *const c_char, flags: c_
     let openat_fn: unsafe extern "C" fn(c_int, *const c_char, c_int, mode_t) -> c_int = unsafe {std::mem::transmute(addr)}; 
     let r_mode = if needs_mode(flags) {mode} else {0};
     let ret = unsafe {openat_fn(dirfd, pathname, flags, r_mode)};
-    let errno_saved = unsafe { *errno() };  
+    let errno_saved = unsafe { *errno() };
+    let dirfd_str = match dirfd {
+        libc::AT_FDCWD => "AT_FDCWD".to_string(),
+        _ => dirfd.to_string(), 
+    };
+    unsafe { log(format_args!("openat(dirfd = {}, pathname = {}, flags = {}, mode = {}) = {}\n", dirfd_str, std::ffi::CStr::from_ptr(pathname).to_str().unwrap_or("[INCORRECT UTF-8]"), flags, r_mode, errno_saved));}
     unsafe { *errno() = errno_saved };
     ret    
 } 
