@@ -77,7 +77,7 @@ pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mode: mode_
     let r_mode = if needs_mode(flags) {mode} else {0};
     let ret = unsafe {open_fn(pathname, flags, r_mode)};
     let errno_saved = unsafe { *errno() };  
-    unsafe { log(format_args!("[SPY] open(pathname = {}, flags = {}, mode = {}) = {}\n", std::ffi::CStr::from_ptr(pathname).to_str().unwrap_or("[INCORRECT UTF-8]"), flags, r_mode, ret));}
+    unsafe { log(format_args!("[SPY] open(pathname = {}, flags = {:#x}, mode = {}) = {}\n", if pathname.is_null() {"NULL"} else {std::ffi::CStr::from_ptr(pathname).to_str().unwrap_or("[INCORRECT UTF-8]")}, flags, r_mode, ret));}
     unsafe { *errno() = errno_saved };
     ret
 }
@@ -90,8 +90,8 @@ pub unsafe extern "C" fn openat(dirfd: c_int, pathname: *const c_char, flags: c_
     let ret = unsafe {openat_fn(dirfd, pathname, flags, r_mode)};
     let errno_saved = unsafe { *errno() };
     match dirfd {
-        libc::AT_FDCWD => unsafe { log(format_args!("[SPY] openat(dirfd = AT_FDCWD, pathname = {}, flags = {}, mode = {}) = {}\n", std::ffi::CStr::from_ptr(pathname).to_str().unwrap_or("[INCORRECT UTF-8]"), flags, r_mode, ret));}
-        _ => unsafe { log(format_args!("[SPY] openat(dirfd = {}, pathname = {}, flags = {}, mode = {}) = {}\n",dirfd, std::ffi::CStr::from_ptr(pathname).to_str().unwrap_or("[INCORRECT UTF-8]"), flags, r_mode, ret));}
+        libc::AT_FDCWD => unsafe { log(format_args!("[SPY] openat(dirfd = AT_FDCWD, pathname = {}, flags = {:#x}, mode = {}) = {}\n", if pathname.is_null() {"NULL"} else {std::ffi::CStr::from_ptr(pathname).to_str().unwrap_or("[INCORRECT UTF-8]")}, flags, r_mode, ret));}
+        _ => unsafe { log(format_args!("[SPY] openat(dirfd = {}, pathname = {}, flags = {:#x}, mode = {}) = {}\n",dirfd, if pathname.is_null() {"NULL"} else {std::ffi::CStr::from_ptr(pathname).to_str().unwrap_or("[INCORRECT UTF-8]")}, flags, r_mode, ret));}
 
     };
         unsafe { *errno() = errno_saved };
