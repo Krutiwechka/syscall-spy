@@ -16,7 +16,6 @@ struct FdPath {
 
 impl FdPath {
     fn new(fd: c_int) -> Self {
-
         let errno_saved = unsafe { *errno() };
         let mut link = [0u8; 32];
         let mut rest: &mut [u8] = &mut link;
@@ -48,13 +47,15 @@ impl FdPath {
     }
 }
 //errno logging
-struct Res {ret: isize, errno: c_int}
-impl Display for Res{
+struct Res {
+    ret: isize,
+    errno: c_int,
+}
+impl Display for Res {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         if self.ret < 0 {
             write!(f, "{} (errno = {})", self.ret, self.errno)
-        }
-        else {
+        } else {
             write!(f, "{}", self.ret)
         }
     }
@@ -90,8 +91,7 @@ fn log(args: std::fmt::Arguments) {
         unsafe { std::mem::transmute(func_addr(&WRITE_ADDR, c"write")) };
     let count: size_t = 512 - rest.len();
     unsafe { write_fn(2, buf.as_ptr() as *const c_void, count) };
-unsafe { *errno() = errno_saved };
-
+    unsafe { *errno() = errno_saved };
 }
 
 //methods intercepting libc calls
@@ -105,7 +105,13 @@ pub unsafe extern "C" fn close(fd: c_int) -> c_int {
         "[SPY] close(fd = {}({})) = {}\n",
         fd,
         fd_path.as_str(),
-        unsafe {Res {ret:ret as isize, errno: *errno()}}       ));
+        unsafe {
+            Res {
+                ret: ret as isize,
+                errno: *errno(),
+            }
+        }
+    ));
     ret
 }
 
@@ -121,7 +127,13 @@ pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> 
         FdPath::new(fd).as_str(),
         buf,
         count,
-        unsafe {Res {ret, errno: *errno()}}     ));
+        unsafe {
+            Res {
+                ret,
+                errno: *errno(),
+            }
+        }
+    ));
     ret
 }
 
@@ -137,7 +149,13 @@ pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssi
         FdPath::new(fd).as_str(),
         buf,
         count,
-        unsafe {Res {ret, errno: *errno()}}));
+        unsafe {
+            Res {
+                ret,
+                errno: *errno(),
+            }
+        }
+    ));
     ret
 }
 
@@ -160,7 +178,11 @@ pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mode: mode_
             },
             flags,
             r_mode,
-            Res {ret: ret as isize, errno: *errno()}         ));
+            Res {
+                ret: ret as isize,
+                errno: *errno()
+            }
+        ));
     }
     ret
 }
@@ -190,7 +212,11 @@ pub unsafe extern "C" fn openat(
                 },
                 flags,
                 r_mode,
-                Res {ret: ret as isize, errno: *errno()}             ));
+                Res {
+                    ret: ret as isize,
+                    errno: *errno()
+                }
+            ));
         },
         _ => unsafe {
             log(format_args!(
@@ -205,7 +231,11 @@ pub unsafe extern "C" fn openat(
                 },
                 flags,
                 r_mode,
-                Res {ret: ret as isize, errno: *errno()}            ));
+                Res {
+                    ret: ret as isize,
+                    errno: *errno()
+                }
+            ));
         },
     };
     ret
