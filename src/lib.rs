@@ -7,7 +7,42 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 unsafe fn errno() -> *mut c_int {
     unsafe { libc::__errno_location() }
 }
+//filepath from descriptor
+struct FdPath {
+    buf: [u8; 256],
+    len: usize,
+}
 
+impl FdPath {
+    fn new(fd: c_int) -> Self {
+        let mut link = [0u8; 32];
+        let mut rest: &mut [u8] = &mut link;
+        let mut fdpath = FdPath {
+            buf: [0; 256],
+            len: 0,
+        };
+        if write!(rest, "/proc/self/fd/{}\0", fd).is_ok() {
+            let ret = unsafe {
+                libc::readlink(
+                    link.as_ptr() as *const c_char,
+                    fdpath.buf.as_mut_ptr() as *mut c_char,
+                    fdpath.buf.len() as size_t,
+                )
+            };
+            if ret > 0 {
+                fdpath.len = ret as usize
+            };
+        }
+        fdpath
+    }
+    fn as_str(&self) -> &str {
+        if self.len > 0 {
+            str::from_utf8(&self.buf[..self.len]).unwrap_or("[INCORRECT UTF-8]")
+        } else {
+            "[INVALID FILE]"
+        }
+    }
+}
 //caching func addr
 static CLOSE_ADDR: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 static WRITE_ADDR: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
@@ -39,14 +74,21 @@ fn log(args: std::fmt::Arguments) {
     let count: size_t = 512 - rest.len();
     unsafe { write_fn(2, buf.as_ptr() as *const c_void, count) };
 }
+
 //methods intercepting libc calls
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn close(fd: c_int) -> c_int {
     let addr = unsafe { func_addr(&CLOSE_ADDR, c"close") };
     let close_fn: unsafe extern "C" fn(c_int) -> c_int = unsafe { std::mem::transmute(addr) };
+    let fd_path = FdPath::new(fd);
     let ret = unsafe { close_fn(fd) };
     let errno_saved = unsafe { *errno() };
-    log(format_args!("[SPY] close(fd = {}) = {}\n", fd, ret));
+    log(format_args!(
+        "[SPY] close(fd = {}({})) = {}\n",
+        fd,
+        fd_path.as_str(),
+        if ret != 0 { errno_saved } else { ret }
+    ));
     unsafe { *errno() = errno_saved };
     ret
 }
@@ -59,8 +101,12 @@ pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> 
     let ret = unsafe { write_fn(fd, buf, count) };
     let errno_saved = unsafe { *errno() };
     log(format_args!(
-        "[SPY] write(fd = {}, buf = {:p}, count = {}) = {}\n",
-        fd, buf, count, ret
+        "[SPY] write(fd = {}({}), buf = {:p}, count = {}) = {}\n",
+        fd,
+        FdPath::new(fd).as_str(),
+        buf,
+        count,
+        if ret != 0 { errno_saved as isize } else { ret }
     ));
     unsafe { *errno() = errno_saved };
     ret
@@ -74,8 +120,12 @@ pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssi
     let ret = unsafe { read_fn(fd, buf, count) };
     let errno_saved = unsafe { *errno() };
     log(format_args!(
-        "[SPY] read(fd = {}, buf = {:p}, count = {}) = {}\n",
-        fd, buf, count, ret
+        "[SPY] read(fd = {}({}), buf = {:p}, count = {}) = {}\n",
+        fd,
+        FdPath::new(fd).as_str(),
+        buf,
+        count,
+        if ret != 0 { errno_saved as isize } else { ret }
     ));
     unsafe { *errno() = errno_saved };
     ret
@@ -101,7 +151,7 @@ pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mode: mode_
             },
             flags,
             r_mode,
-            ret
+            if ret != 0 { errno_saved } else { ret }
         ));
     }
     unsafe { *errno() = errno_saved };
@@ -134,7 +184,7 @@ pub unsafe extern "C" fn openat(
                 },
                 flags,
                 r_mode,
-                ret
+                if ret != 0 { errno_saved } else { ret }
             ));
         },
         _ => unsafe {
@@ -150,7 +200,7 @@ pub unsafe extern "C" fn openat(
                 },
                 flags,
                 r_mode,
-                ret
+                if ret != 0 { errno_saved } else { ret }
             ));
         },
     };
