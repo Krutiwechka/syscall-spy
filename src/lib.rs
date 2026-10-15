@@ -1,6 +1,7 @@
 #![allow(clippy::missing_safety_doc)]
 use libc::{RTLD_NEXT, mode_t, size_t, ssize_t};
 use std::ffi::{self, c_char, c_int, c_void};
+use std::fmt::Display;
 use std::io::Write as _;
 use std::sync::atomic::{AtomicPtr, Ordering};
 //convenient errno func
@@ -15,6 +16,8 @@ struct FdPath {
 
 impl FdPath {
     fn new(fd: c_int) -> Self {
+
+        let errno_saved = unsafe { *errno() };
         let mut link = [0u8; 32];
         let mut rest: &mut [u8] = &mut link;
         let mut fdpath = FdPath {
@@ -33,13 +36,26 @@ impl FdPath {
                 fdpath.len = ret as usize
             };
         }
+        unsafe { *errno() = errno_saved };
         fdpath
     }
     fn as_str(&self) -> &str {
         if self.len > 0 {
             str::from_utf8(&self.buf[..self.len]).unwrap_or("[INCORRECT UTF-8]")
         } else {
-            "[INVALID FILE]"
+            "[UNKNOWN]"
+        }
+    }
+}
+//errno logging
+struct Res {ret: isize, errno: c_int}
+impl Display for Res{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if self.ret < 0 {
+            write!(f, "{} (errno = {})", self.ret, self.errno)
+        }
+        else {
+            write!(f, "{}", self.ret)
         }
     }
 }
@@ -66,6 +82,7 @@ fn needs_mode(flags: c_int) -> bool {
 }
 //logging func
 fn log(args: std::fmt::Arguments) {
+    let errno_saved = unsafe { *errno() };
     let mut buf = [0u8; 512];
     let mut rest: &mut [u8] = &mut buf;
     let _ = rest.write_fmt(args);
@@ -73,6 +90,8 @@ fn log(args: std::fmt::Arguments) {
         unsafe { std::mem::transmute(func_addr(&WRITE_ADDR, c"write")) };
     let count: size_t = 512 - rest.len();
     unsafe { write_fn(2, buf.as_ptr() as *const c_void, count) };
+unsafe { *errno() = errno_saved };
+
 }
 
 //methods intercepting libc calls
@@ -82,14 +101,11 @@ pub unsafe extern "C" fn close(fd: c_int) -> c_int {
     let close_fn: unsafe extern "C" fn(c_int) -> c_int = unsafe { std::mem::transmute(addr) };
     let fd_path = FdPath::new(fd);
     let ret = unsafe { close_fn(fd) };
-    let errno_saved = unsafe { *errno() };
     log(format_args!(
         "[SPY] close(fd = {}({})) = {}\n",
         fd,
         fd_path.as_str(),
-        if ret != 0 { errno_saved } else { ret }
-    ));
-    unsafe { *errno() = errno_saved };
+        unsafe {Res {ret:ret as isize, errno: *errno()}}       ));
     ret
 }
 
@@ -99,16 +115,13 @@ pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> 
     let write_fn: unsafe extern "C" fn(c_int, *const c_void, size_t) -> ssize_t =
         unsafe { std::mem::transmute(addr) };
     let ret = unsafe { write_fn(fd, buf, count) };
-    let errno_saved = unsafe { *errno() };
     log(format_args!(
         "[SPY] write(fd = {}({}), buf = {:p}, count = {}) = {}\n",
         fd,
         FdPath::new(fd).as_str(),
         buf,
         count,
-        if ret != 0 { errno_saved as isize } else { ret }
-    ));
-    unsafe { *errno() = errno_saved };
+        unsafe {Res {ret, errno: *errno()}}     ));
     ret
 }
 
@@ -118,16 +131,13 @@ pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssi
     let read_fn: unsafe extern "C" fn(c_int, *mut c_void, size_t) -> ssize_t =
         unsafe { std::mem::transmute(addr) };
     let ret = unsafe { read_fn(fd, buf, count) };
-    let errno_saved = unsafe { *errno() };
     log(format_args!(
         "[SPY] read(fd = {}({}), buf = {:p}, count = {}) = {}\n",
         fd,
         FdPath::new(fd).as_str(),
         buf,
         count,
-        if ret != 0 { errno_saved as isize } else { ret }
-    ));
-    unsafe { *errno() = errno_saved };
+        unsafe {Res {ret, errno: *errno()}}));
     ret
 }
 
@@ -138,10 +148,9 @@ pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mode: mode_
         unsafe { std::mem::transmute(addr) };
     let r_mode = if needs_mode(flags) { mode } else { 0 };
     let ret = unsafe { open_fn(pathname, flags, r_mode) };
-    let errno_saved = unsafe { *errno() };
     unsafe {
         log(format_args!(
-            "[SPY] open(pathname = {}, flags = {:#x}, mode = {}) = {}\n",
+            "[SPY] open(pathname = {}, flags = {:#x}, mode = {:#o}) = {}\n",
             if pathname.is_null() {
                 "NULL"
             } else {
@@ -151,10 +160,8 @@ pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mode: mode_
             },
             flags,
             r_mode,
-            if ret != 0 { errno_saved } else { ret }
-        ));
+            Res {ret: ret as isize, errno: *errno()}         ));
     }
-    unsafe { *errno() = errno_saved };
     ret
 }
 
@@ -170,11 +177,10 @@ pub unsafe extern "C" fn openat(
         unsafe { std::mem::transmute(addr) };
     let r_mode = if needs_mode(flags) { mode } else { 0 };
     let ret = unsafe { openat_fn(dirfd, pathname, flags, r_mode) };
-    let errno_saved = unsafe { *errno() };
     match dirfd {
         libc::AT_FDCWD => unsafe {
             log(format_args!(
-                "[SPY] openat(dirfd = AT_FDCWD, pathname = {}, flags = {:#x}, mode = {}) = {}\n",
+                "[SPY] openat(dirfd = AT_FDCWD, pathname = {}, flags = {:#x}, mode = {:#o}) = {}\n",
                 if pathname.is_null() {
                     "NULL"
                 } else {
@@ -184,12 +190,11 @@ pub unsafe extern "C" fn openat(
                 },
                 flags,
                 r_mode,
-                if ret != 0 { errno_saved } else { ret }
-            ));
+                Res {ret: ret as isize, errno: *errno()}             ));
         },
         _ => unsafe {
             log(format_args!(
-                "[SPY] openat(dirfd = {}, pathname = {}, flags = {:#x}, mode = {}) = {}\n",
+                "[SPY] openat(dirfd = {}, pathname = {}, flags = {:#x}, mode = {:#o}) = {}\n",
                 dirfd,
                 if pathname.is_null() {
                     "NULL"
@@ -200,10 +205,8 @@ pub unsafe extern "C" fn openat(
                 },
                 flags,
                 r_mode,
-                if ret != 0 { errno_saved } else { ret }
-            ));
+                Res {ret: ret as isize, errno: *errno()}            ));
         },
     };
-    unsafe { *errno() = errno_saved };
     ret
 }
